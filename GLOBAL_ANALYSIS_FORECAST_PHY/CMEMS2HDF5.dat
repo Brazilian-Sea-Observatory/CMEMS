@@ -1,0 +1,6 @@
+FORECAST_MODE                 : 1
+REFDAY_TO_START               : 1 
+NUMBER_OF_RUNS                : 8
+
+START                         : 2020 02 19 00 00 00
+END                           : 2020 02 20 00 00 00
