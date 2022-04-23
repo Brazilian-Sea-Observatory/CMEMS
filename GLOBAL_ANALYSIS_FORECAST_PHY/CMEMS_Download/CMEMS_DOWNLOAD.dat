@@ -1,8 +1,9 @@
 START : 2022 04 30 21 00 03
 END : 2022 05 01 21 00 03
 
-your_user : gfranz
-your_password : Guilherme@CMEMS2015
+#fill in your details for CMEMS login
+your_user : 
+your_password : 
 lon_min : -50.69
 lon_max : -38.36
 lat_min : -30.81
