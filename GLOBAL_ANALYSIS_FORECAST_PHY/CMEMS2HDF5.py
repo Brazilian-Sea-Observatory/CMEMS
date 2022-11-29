@@ -1,134 +1,115 @@
-#!/home/mohid/anaconda3/bin/python3
 import re
 import datetime
 import time
 import glob, os, shutil
 import subprocess
+from Input_CMEMS2HDF5 import *
 
-#dirpath = os.getcwd()
-dirpath = ("/home/mohid/Aplica/CMEMS/GLOBAL_ANALYSIS_FORECAST_PHY")
-
-input_file = ("/home/mohid/Aplica/CMEMS/GLOBAL_ANALYSIS_FORECAST_PHY/CMEMS2HDF5.dat")
-
-download_dir = (dirpath+"/CMEMS_Download")
-ConvertToHdf5_dir = (dirpath+"/ConvertToHdf5")
-
-#backup_path =  (dirpath+"/Backup")
-### backup_path = ("/dados1/mohid/backup/CMEMS")
-backup_path = ("/dados3/mohidInput/CMEMS")
-#####################################################
-def read_date():
-	global initial_date
-	global end_date
-	global number_of_runs
-	
-	forecast_mode = 0
-	refday_to_start = 0
-	number_of_runs = 0
-	
-	with open(input_file) as file:
-		for line in file:
-			if re.search("^FORECAST_MODE.+:", line):
-				number = line.split()
-				forecast_mode = int(number[2])
-				
-	if forecast_mode == 1:
-		with open(input_file) as file:
-			for line in file:
-				if re.search("^REFDAY_TO_START.+:", line):
-					number = line.split()
-					refday_to_start = int(number[2])
-				elif re.search("^NUMBER_OF_RUNS.+:", line):
-					number = line.split()
-					number_of_runs = int(number[2])
-					
-		initial_date = datetime.datetime.utcnow() + datetime.timedelta(days = refday_to_start)
-		end_date = initial_date + datetime.timedelta(days = number_of_runs-1)
-    						
-	else:
-		with open(input_file) as file:
-			for line in file:
-				if re.search("^START.+:", line):
-					number = line.split()
-					initial_date = datetime.datetime(int(number[2]),int(number[3]),int(number[4]),int(number[5]),int(number[6]),int(number[7]))
-				elif re.search("^END.+:", line):
-					number = line.split()
-					end_date = datetime.datetime(int(number[2]),int(number[3]),int(number[4]),int(number[5]),int(number[6]),int(number[7]))
-				
-		interval = end_date - initial_date
-		number_of_runs = interval.days	
 #####################################################
 def next_date (run):
-	global next_start_date
-	global next_end_date
-		
-	next_start_date = initial_date + datetime.timedelta(days = run)
-	next_end_date = next_start_date + datetime.timedelta(days = 1)
+        global next_start_date
+        global next_end_date
+            
+        next_start_date = initial_date + datetime.timedelta(days = run)
+        next_end_date = next_start_date + datetime.timedelta(days = 1)
 
 #####################################################
-def write_date(file_name):
-		
-	with open(file_name) as file:
-		file_lines = file.readlines()
-		
-	number_of_lines = len(file_lines)
-	
-	for n in range(0,number_of_lines):
-		line = file_lines[n]		
-		if re.search("^START.+:", line):
-			file_lines[n] = "START " + ": " + str(next_start_date.strftime("%Y %m %d %H %M %S")) + "\n"
+def download_file():
 
-		elif re.search("^END.+:", line):	
-			file_lines[n] = "END " + ": " + str(next_end_date.strftime("%Y %m %d %H %M %S")) + "\n"
-			
-	with open(file_name,"w") as file:
-		for n in range(0,number_of_lines) :
-			file.write(file_lines[n])
+        #Take also the previous day for running Mohid
+        start_date = next_start_date - datetime.timedelta(days = 1)
+        
+        f_size = 0.
+        
+        tempoIni = time.time()
+
+        while f_size < min_file_size:
+                print("Downloading:", output_file_name,".nc for", str(next_start_date.strftime("%Y-%m-%d")))
+                
+                os.system("python -m motuclient --motu http://nrt.cmems-du.eu/motu-web/Motu --service-id GLOBAL_ANALYSIS_FORECAST_PHY_001_024-TDS --product-id global-analysis-forecast-phy-001-024 --longitude-min " +
+                lon_min + " --longitude-max " + lon_max + " --latitude-min " + lat_min + " --latitude-max " + lat_max + " --date-min " + '"' + str(start_date.strftime("%Y-%m-%d"))+" 12:00:00"+'"'+ 
+                " --date-max " + '"'+str(next_end_date.strftime("%Y-%m-%d"))+" 12:00:00"+'"'+ " --depth-min " + start_depth + " --depth-max " + end_depth + " --variable thetao --variable so --variable zos --variable uo --variable vo --out-dir " + 
+                download_dir + " --out-name " + output_file_name + ".nc --user " + user + " --pwd " + password)
+                
+                f_size = os.path.getsize(output_file_name + '.nc')
+              
+                if f_size < min_file_size: 
+                        print ("File not found or is too small")
+                        print ("Trying again in ", wait_time, " s...")
+                        ## aguarda
+                        time.sleep(wait_time)
+                        tempoAtual = time.time()
+                        tempoTotal = tempoAtual-tempoIni
+
+                        if tempoTotal > wait_total_time: 
+                                msg = 'Failed to download files from CMEMS for ' + str(next_start_date.strftime("%Y-%m-%d")) + ' after ' + wait_total_time + ' s.'
+                                print(msg)
+                                telegram_msg(msg) 
+                                return False
+                                break #encerra o loop
+                
+
 
 #####################################################
+#Funcao para envio de mensagem pelo Bot do Telegram
+def telegram_msg(message):
+        if telegram_messages == 1:
+                #message = "hello from your telegram bot"
+                urlbot = f"https://api.telegram.org/bot{TOKEN}/sendMessage?chat_id={chat_id}&text={message}"
+                print(requests.get(urlbot).json()) # this sends the message
+#####################################################
 
-read_date()
+if forecast_mode == 1:
 
-for run in range (0,number_of_runs):	
-	
-	#Update dates
-	next_date (run)
-	
-	#Download
-	os.chdir(download_dir)
-	
-	files = glob.glob("*.nc")
-	for filename in files:
-		os.remove(filename)
-		
-	file_name = "/home/mohid/Aplica/CMEMS/GLOBAL_ANALYSIS_FORECAST_PHY/CMEMS_Download/CMEMS_DOWNLOAD.dat"
-	write_date(file_name)	
-	output = subprocess.call(["/home/mohid/Aplica/CMEMS/GLOBAL_ANALYSIS_FORECAST_PHY/CMEMS_Download/CMEMS_DOWNLOAD.py"])
-	
-	nc_files = glob.iglob(os.path.join(download_dir,"*.nc"))
-	for file in nc_files:
-		shutil.copy(file, ConvertToHdf5_dir)
-	
-		
-	#ConvertToHdf5
-	os.chdir(ConvertToHdf5_dir)
-	
-	files = glob.glob("*.hdf*")
-	for filename in files:
-		os.remove(filename)
-		
-	output = subprocess.call(["/home/mohid/Aplica/CMEMS/GLOBAL_ANALYSIS_FORECAST_PHY/ConvertToHdf5/ConvertToHDF5.exe"])
-	
-	#output_dir = backup_path+"\\"+str(next_start_date.strftime("%Y"))+"\\"+str(next_start_date.strftime("%m"))+"\\"+str(next_start_date.strftime("%Y%m%d")) + "_" + str(next_end_date.strftime("%Y%m%d"))
-	output_dir = backup_path+"//"+str(next_start_date.strftime("%Y%m%d")) + "_" + str(next_end_date.strftime("%Y%m%d"))
-		
-	if not os.path.exists(output_dir):
-		os.makedirs(output_dir)
-	
-	hdf_files = glob.iglob(os.path.join(ConvertToHdf5_dir,"*.hdf*"))
-	for file in hdf_files:
-		shutil.copy(file, output_dir)
-	
-	files = glob.glob("*.nc")
-	for filename in files:
-		os.remove(filename)
+        initial_date = datetime.datetime.combine(datetime.datetime.today(), datetime.time.min) + datetime.timedelta(days = refday_to_start)
+        
+else:
+        interval = end - start
+        number_of_runs = interval.days
+        initial_date = datetime.datetime.combine(start, datetime.time.min)
+        
+for run in range (0,number_of_runs):    
+    
+        #Update dates
+        next_date (run)
+        
+        #Download
+        os.chdir(download_dir)
+        
+        files = glob.glob("*.nc")
+        for filename in files:
+                os.remove(filename)
+
+        
+        if download_file() != False:
+        
+                nc_files = glob.iglob(os.path.join(download_dir,"*.nc"))
+                for file in nc_files:
+                        shutil.copy(file, ConvertToHdf5_dir)
+                
+                #ConvertToHdf5
+                os.chdir(ConvertToHdf5_dir)
+                
+                files = glob.glob("*.hdf*")
+                for filename in files:
+                        os.remove(filename)
+                    
+                output = subprocess.call([ConvertToHdf5_dir + "/ConvertToHDF5.exe"])
+                
+                if output == 0: 
+                        output_dir = backup_path+"//"+str(next_start_date.strftime("%Y%m%d")) + "_" + str(next_end_date.strftime("%Y%m%d"))
+                            
+                        if not os.path.exists(output_dir):
+                                os.makedirs(output_dir)
+                        
+                        hdf_files = glob.iglob(os.path.join(ConvertToHdf5_dir,"*.hdf*"))
+                        for file in hdf_files:
+                                shutil.copy(file, output_dir)
+                        
+                        files = glob.glob("*.nc")
+                        for filename in files:
+                                os.remove(filename)
+                else:
+                        msg = 'Failed to Convert to HDF5 files from CMEMS for ' + str(next_start_date.strftime("%Y-%m-%d")) 
+                        print(msg)
+                        telegram_msg(msg) 

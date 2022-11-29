@@ -4,7 +4,7 @@ ACTION : CONVERT NETCDF CF TO HDF5 MOHID
 HDF5_OUT : 1
 NETCDF_OUT : 0
 OUTPUT_NETCDF_FILE : NULL.nc
-OUTPUTFILENAME : Plataforma_SE.hdf5
+OUTPUTFILENAME : CMEMS.hdf5
  
 <<begin_time>>
 NETCDF_NAME : time
@@ -85,7 +85,7 @@ VECTOR_Y                 : velocity V
 <<end_field>>
  
 <<begin_input_files>>
-Plataforma_SE.nc
+CMEMS.nc
 <<end_input_files>>
  
 <end_file>
